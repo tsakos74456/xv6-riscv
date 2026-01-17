@@ -27,6 +27,7 @@ struct cpu {
 };
 
 extern struct cpu cpus[NCPU];
+extern struct spinlock wait_lock;
 
 // per-process data for the trap handling code in trampoline.S.
 // sits in a page by itself just under the trampoline page in the
@@ -104,4 +105,14 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+
+  
+  // MLFQ
+  int priority;
+  int ticks_used;
+  int wait_ticks;
 };
+
+
+#include "pstat.h"

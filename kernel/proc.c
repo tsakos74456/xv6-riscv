@@ -125,6 +125,11 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
+  // MLFQ initialization
+  p->priority = 0;   // new processes start at highest priority lvl
+  p->ticks_used = 0;
+  p->wait_ticks = 0;
+  
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);

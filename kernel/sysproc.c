@@ -7,6 +7,8 @@
 #include "proc.h"
 #include "vm.h"
 
+extern struct proc proc[NPROC];
+
 uint64
 sys_exit(void)
 {
@@ -106,4 +108,47 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_getpinfo(void)
+{
+
+  struct pstat kernel_st;
+  struct pstat *user_st;
+
+  argaddr(0, (uint64*)&user_st);
+  if (user_st == 0)
+    return -1;
+
+  struct proc *p;
+  int i = 0;
+
+  memset(&kernel_st, 0, sizeof(kernel_st));
+
+  // parent pointer is protected by wait_lock so there won't be any data race and parent won't change 
+  acquire(&wait_lock);
+  for (p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if (p->state != UNUSED) {
+      kernel_st.in_use[i] = 1;
+      kernel_st.pid[i] = p->pid;
+      kernel_st.ppid[i] = p->parent ? p->parent->pid : -1;
+      kernel_st.state[i] = p->state;
+      kernel_st.priority[i] = p->priority;
+      kernel_st.size[i] = p->sz;
+      safestrcpy(kernel_st.name[i], p->name, sizeof(kernel_st.name[i]));
+      i++;
+    }
+    release(&p->lock);
+  }
+  release(&wait_lock);
+
+  kernel_st.num_processes = i;
+
+  // copy to the user struct
+  if (copyout(myproc()->pagetable, (uint64)user_st,
+              (char *)&kernel_st, sizeof(kernel_st)) < 0)
+    return -1;
+  return 0;
 }
