@@ -43,6 +43,7 @@ mlfq_action(struct proc *p)
     release(&p->lock);
   }
 
+  // aging
   // check if it waits 10 * quantum of its priority level increase the priority level 
   for(struct proc *q = proc; q < &proc[NPROC]; q++){
     acquire(&q->lock);
