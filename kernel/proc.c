@@ -17,18 +17,18 @@ struct proc *initproc;
 struct queue mlfq[NQUEUE];
 static struct spinlock mlfq_lock;
 
-// functions to ensure enqueue and dequeue locked without having access from other files
+// function which implements the enqneue, implemented like tgat so there is not access from other files
 static void
 enqueue_locked(struct queue *q, struct proc *p)
 {
   if (q->size == NPROC)
     return;
-
+  
   q->procs[q->tail] = p;
   q->tail = (q->tail + 1) % NPROC;
   q->size++;
 }
-
+// function which implements the deqneue, implemented like tgat so there is not access from other files
 static struct proc*
 dequeue_locked(struct queue *q)
 {
@@ -53,6 +53,7 @@ remove_from_queue(struct queue *q, struct proc *p)
   }
   release(&mlfq_lock);
 }
+
 
 void
 enqueue(struct queue *q, struct proc *p)
@@ -320,7 +321,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-  enqueue(&mlfq[p->priority], p);
+  enqueue(&mlfq[0], p);
 
   release(&p->lock);
 }
@@ -395,6 +396,7 @@ kfork(void)
   acquire(&np->lock);
 
   np->state = RUNNABLE;
+  
   // enter priority lvl 0
   enqueue(&mlfq[0], np);
 
@@ -686,7 +688,7 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
-        
+
         // boost interactive wakeups so they can make progress quickly.
         p->priority = 0;
         p->ticks_used = 0;

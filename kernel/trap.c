@@ -18,7 +18,7 @@ extern int devintr();
 
 // checks in every time tick what changes should happen
 static void
-mlfq_tick(struct proc *p)
+mlfq_action(struct proc *p)
 {
   if(p){
     acquire(&p->lock);
@@ -130,7 +130,7 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // check the actions per time tick
     if(which_dev == 2)
-      mlfq_tick(p);
+      mlfq_action(p);
   } else if((r_scause() == 15 || r_scause() == 13) &&
             vmfault(p->pagetable, r_stval(), (r_scause() == 13)? 1 : 0) != 0) {
     // page fault on lazily-allocated page
@@ -211,7 +211,7 @@ kerneltrap()
   }
   // check actions per time tick
   if(which_dev == 2)
-    mlfq_tick(myproc());
+    mlfq_action(myproc());
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
