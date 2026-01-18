@@ -559,7 +559,6 @@ scheduler(void)
 
     p->state = RUNNING;
     c->proc = p;
-    p->wait_ticks = 0;
     
     swtch(&c->context, &p->context);
 

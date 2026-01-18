@@ -24,7 +24,7 @@ mlfq_tick(struct proc *p)
     acquire(&p->lock);
 
     p->ticks_used++;
-
+    p->wait_ticks = 0;
     // if the proper ticks are used then decrease priorty and call yield
     if(p->ticks_used >= quantum[p->priority]){
       if(p->priority < 3)
