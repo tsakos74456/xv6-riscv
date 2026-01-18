@@ -1,3 +1,5 @@
+#include "pstat.h"
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -115,4 +117,19 @@ struct proc {
 };
 
 
-#include "pstat.h"
+// FIFO implementation for priorities
+#define NQUEUE 4
+
+struct queue {
+  struct proc* procs[NPROC];
+  int head;
+  int tail;
+  int size;
+};
+
+extern struct queue mlfq[NQUEUE];
+extern int quantum[4];
+extern struct proc proc[NPROC];
+void remove_from_queue(struct queue *q, struct proc *p);
+struct proc* dequeue(struct queue *q);
+void enqueue(struct queue *q, struct proc *p);

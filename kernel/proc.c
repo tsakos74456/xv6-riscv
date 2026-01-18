@@ -6,11 +6,50 @@
 #include "proc.h"
 #include "defs.h"
 
+// MLFQ TIMER TICKS PER LEVEL
+int quantum[4] = {4, 8, 16, 32};
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
 
 struct proc *initproc;
+
+struct queue mlfq[NQUEUE];
+
+void
+remove_from_queue(struct queue *q, struct proc *p)
+{
+  int n = q->size;
+  for(int i = 0; i < n; i++){
+    struct proc *x = dequeue(q);
+    if(x != p)
+      enqueue(q, x);
+  }
+}
+
+void
+enqueue(struct queue *q, struct proc *p)
+{
+  if (q->size == NPROC)
+    return;
+
+  q->procs[q->tail] = p;
+  q->tail = (q->tail + 1) % NPROC;
+  q->size++;
+}
+
+struct proc*
+dequeue(struct queue *q)
+{
+  if (q->size == 0)
+    return 0;
+
+  struct proc *p = q->procs[q->head];
+  q->head = (q->head + 1) % NPROC;
+  q->size--;
+  return p;
+}
+
 
 int nextpid = 1;
 struct spinlock pid_lock;
@@ -55,6 +94,13 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->state = UNUSED;
       p->kstack = KSTACK((int) (p - proc));
+  }
+
+  // initialize queues
+  for(int i = 0; i < 4; i++){
+    mlfq[i].head = 0;
+    mlfq[i].tail = 0;
+    mlfq[i].size = 0;
   }
 }
 
@@ -129,7 +175,7 @@ found:
   p->priority = 0;   // new processes start at highest priority lvl
   p->ticks_used = 0;
   p->wait_ticks = 0;
-  
+
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -232,6 +278,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  enqueue(&mlfq[p->priority], p);
 
   release(&p->lock);
 }
@@ -304,7 +351,11 @@ kfork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
+
   np->state = RUNNABLE;
+  // enter priority lvl 0
+  enqueue(&mlfq[0], np);
+
   release(&np->lock);
 
   return pid;
@@ -442,29 +493,39 @@ scheduler(void)
     intr_on();
     intr_off();
 
-    int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+    p = 0;
+    
+    // select from the highest priority level the first available
+    for(int lvl = 0; lvl < 4; lvl++){
+      if(mlfq[lvl].size > 0){
+        p = dequeue(&mlfq[lvl]);
+        break;
       }
-      release(&p->lock);
     }
-    if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
+
+    // sleep CPU not process found
+    if(p == 0){
       asm volatile("wfi");
+      continue;
     }
-  }
+
+    acquire(&p->lock);
+
+    if(p->state != RUNNABLE){
+      release(&p->lock);
+      continue;
+    }
+
+    p->state = RUNNING;
+    c->proc = p;
+    p->wait_ticks = 0;
+    
+    swtch(&c->context, &p->context);
+
+    // 4️⃣ Επιστροφή από διεργασία
+    c->proc = 0;
+    release(&p->lock);
+    }
 }
 
 // Switch to scheduler.  Must hold only p->lock
@@ -501,6 +562,7 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+  enqueue(&mlfq[p->priority], p);
   sched();
   release(&p->lock);
 }
@@ -585,6 +647,7 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        enqueue(&mlfq[p->priority],p);
       }
       release(&p->lock);
     }
@@ -606,6 +669,7 @@ kkill(int pid)
       if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
+        enqueue(&mlfq[p->priority], p);
       }
       release(&p->lock);
       return 0;

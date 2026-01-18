@@ -80,10 +80,6 @@ usertrap(void)
   if(killed(p))
     kexit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
-
   prepare_return();
 
   // the user page table to switch to, for trampoline.S
@@ -151,9 +147,58 @@ kerneltrap()
     panic("kerneltrap");
   }
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0)
-    yield();
+  // MLFQ TIME INTERRUPT
+  if(which_dev == 2){
+  struct proc *p = myproc();
+
+  // 1️⃣ Αν τρέχει διεργασία
+  if(p && p->state == RUNNING){
+    acquire(&p->lock);
+
+    p->ticks_used++;
+
+    // when its ows quantum ends
+    if(p->ticks_used >= quantum[p->priority]){
+      if(p->priority < 3)
+        p->priority++;
+
+      p->ticks_used = 0;
+      p->wait_ticks = 0;
+
+      // insert process into the accordidng queue
+      p->state = RUNNABLE;
+
+      release(&p->lock);
+      yield();   
+      goto done;
+    }
+
+    release(&p->lock);
+  }
+
+  // starvation problem per 10 ticks increase lvl
+  for(struct proc *q = proc; q < &proc[NPROC]; q++){
+    acquire(&q->lock);
+
+    if(q->state == RUNNABLE){
+      q->wait_ticks++;
+
+      if(q->wait_ticks >= 10 * quantum[q->priority]){
+        if(q->priority > 0){
+          remove_from_queue(&mlfq[q->priority],q);
+          q->priority--;
+          enqueue(&mlfq[q->priority],q);
+          
+        }
+        q->wait_ticks = 0;
+      }
+    }
+
+    release(&q->lock);
+  }
+}
+
+done:
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
