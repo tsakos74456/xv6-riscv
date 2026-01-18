@@ -20,26 +20,26 @@ extern int devintr();
 static void
 mlfq_tick(struct proc *p)
 {
-  if(p && p->state == RUNNING){
+  if(p){
     acquire(&p->lock);
-
-    p->ticks_used++;
-    p->wait_ticks = 0;
-    // if the proper ticks are used then decrease priorty and call yield
-    if(p->ticks_used >= quantum[p->priority]){
-      if(p->priority < 3)
-        p->priority++;
-
-      p->ticks_used = 0;
+    if (p->state == RUNNING){
+  
+      p->ticks_used++;
       p->wait_ticks = 0;
-      p->state = RUNNABLE;
+      // if the proper ticks are used then decrease priorty and call yield
+      if(p->ticks_used >= quantum[p->priority]){
+        if(p->priority < 3)
+          p->priority++;
 
-      release(&p->lock);
-      // not enqueue in this part as yield handles it
-      yield();
-      return;
+        p->ticks_used = 0;
+        p->wait_ticks = 0;
+
+        release(&p->lock);
+        // not enqueue in this part as yield handles it
+        yield();
+        return;
+      }
     }
-
     release(&p->lock);
   }
 
@@ -63,9 +63,18 @@ mlfq_tick(struct proc *p)
     release(&q->lock);
   }
 
+  
   // check if there is any process with priority higher than the one which is running
-  if(p && p->state == RUNNING && higher_prio_runnable(p->priority))
-    yield();
+  if(p){
+    int yield_flag = 0;
+    acquire(&p->lock);
+    if(p->state == RUNNING && higher_prio_runnable(p->priority))
+      yield_flag =1;
+    release(&p->lock);
+
+    if(yield_flag)
+      yield();
+  }
 }
 
 void

@@ -562,7 +562,6 @@ scheduler(void)
     
     swtch(&c->context, &p->context);
 
-    // 4️⃣ Επιστροφή από διεργασία
     c->proc = 0;
     release(&p->lock);
     }
