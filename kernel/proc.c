@@ -686,6 +686,11 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        
+        // boost interactive wakeups so they can make progress quickly.
+        p->priority = 0;
+        p->ticks_used = 0;
+        p->wait_ticks = 0;
         enqueue(&mlfq[p->priority],p);
       }
       release(&p->lock);
