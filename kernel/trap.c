@@ -16,6 +16,58 @@ void kernelvec();
 
 extern int devintr();
 
+// checks in every time tick what changes should happen
+static void
+mlfq_tick(struct proc *p)
+{
+  if(p && p->state == RUNNING){
+    acquire(&p->lock);
+
+    p->ticks_used++;
+
+    // if the proper ticks are used then decrease priorty and call yield
+    if(p->ticks_used >= quantum[p->priority]){
+      if(p->priority < 3)
+        p->priority++;
+
+      p->ticks_used = 0;
+      p->wait_ticks = 0;
+      p->state = RUNNABLE;
+
+      release(&p->lock);
+      // not enqueue in this part as yield handles it
+      yield();
+      return;
+    }
+
+    release(&p->lock);
+  }
+
+  // check if it waits 10 * quantum of its priority level increase the priority level 
+  for(struct proc *q = proc; q < &proc[NPROC]; q++){
+    acquire(&q->lock);
+
+    if(q->state == RUNNABLE){
+      q->wait_ticks++;
+
+      if(q->wait_ticks >= 10 * quantum[q->priority]){
+        if(q->priority > 0){
+          remove_from_queue(&mlfq[q->priority], q);
+          q->priority--;
+          enqueue(&mlfq[q->priority], q);
+        }
+        q->wait_ticks = 0;
+      }
+    }
+
+    release(&q->lock);
+  }
+
+  // check if there is any process with priority higher than the one which is running
+  if(p && p->state == RUNNING && higher_prio_runnable(p->priority))
+    yield();
+}
+
 void
 trapinit(void)
 {
@@ -67,7 +119,9 @@ usertrap(void)
 
     syscall();
   } else if((which_dev = devintr()) != 0){
-    // ok
+    // check the actions per time tick
+    if(which_dev == 2)
+      mlfq_tick(p);
   } else if((r_scause() == 15 || r_scause() == 13) &&
             vmfault(p->pagetable, r_stval(), (r_scause() == 13)? 1 : 0) != 0) {
     // page fault on lazily-allocated page
@@ -146,59 +200,9 @@ kerneltrap()
     printf("scause=0x%lx sepc=0x%lx stval=0x%lx\n", scause, r_sepc(), r_stval());
     panic("kerneltrap");
   }
-
-  // MLFQ TIME INTERRUPT
-  if(which_dev == 2){
-  struct proc *p = myproc();
-
-  // 1️⃣ Αν τρέχει διεργασία
-  if(p && p->state == RUNNING){
-    acquire(&p->lock);
-
-    p->ticks_used++;
-
-    // when its ows quantum ends
-    if(p->ticks_used >= quantum[p->priority]){
-      if(p->priority < 3)
-        p->priority++;
-
-      p->ticks_used = 0;
-      p->wait_ticks = 0;
-
-      // insert process into the accordidng queue
-      p->state = RUNNABLE;
-
-      release(&p->lock);
-      yield();   
-      goto done;
-    }
-
-    release(&p->lock);
-  }
-
-  // starvation problem per 10 ticks increase lvl
-  for(struct proc *q = proc; q < &proc[NPROC]; q++){
-    acquire(&q->lock);
-
-    if(q->state == RUNNABLE){
-      q->wait_ticks++;
-
-      if(q->wait_ticks >= 10 * quantum[q->priority]){
-        if(q->priority > 0){
-          remove_from_queue(&mlfq[q->priority],q);
-          q->priority--;
-          enqueue(&mlfq[q->priority],q);
-          
-        }
-        q->wait_ticks = 0;
-      }
-    }
-
-    release(&q->lock);
-  }
-}
-
-done:
+  // check actions per time tick
+  if(which_dev == 2)
+    mlfq_tick(myproc());
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -261,4 +265,3 @@ devintr()
     return 0;
   }
 }
-

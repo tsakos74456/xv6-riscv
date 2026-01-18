@@ -130,6 +130,17 @@ struct queue {
 extern struct queue mlfq[NQUEUE];
 extern int quantum[4];
 extern struct proc proc[NPROC];
+
+// remove a process from the queue, without checking the order
+// it is user in order to increase priority when ten ticks have passed
 void remove_from_queue(struct queue *q, struct proc *p);
+
+// remove the front of the queue, the 1st in the order
 struct proc* dequeue(struct queue *q);
+
+// add a process in the end of the queue
 void enqueue(struct queue *q, struct proc *p);
+
+
+// returns 1 if there is a process with higher prioriry otherwise 0
+int higher_prio_runnable(int prio);

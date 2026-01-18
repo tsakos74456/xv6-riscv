@@ -23,12 +23,12 @@ int main(void) {
     exit(1);
   }
 
-  printf("PID\tPPID\tSTATE\tPRIO\tSIZE\tNAME\n");
+  printf("PID\tPPID\tSTATE\tSIZE\tNAME\n");
 
   for (int i = 0; i < st.num_processes; i++) {
     if (st.in_use[i]) {
-      printf("%d\t%d\t%s\t%d\t%d\t%s\n",
-             st.pid[i], st.ppid[i], state_to_string(st.state[i]), st.priority[i], st.size[i], st.name[i]);
+      printf("%d\t%d\t%s\t%d\t%s\n",
+             st.pid[i], st.ppid[i], state_to_string(st.state[i]), st.size[i], st.name[i]);
     }
   }
   exit(0);

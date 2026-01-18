@@ -15,20 +15,11 @@ struct proc proc[NPROC];
 struct proc *initproc;
 
 struct queue mlfq[NQUEUE];
+static struct spinlock mlfq_lock;
 
-void
-remove_from_queue(struct queue *q, struct proc *p)
-{
-  int n = q->size;
-  for(int i = 0; i < n; i++){
-    struct proc *x = dequeue(q);
-    if(x != p)
-      enqueue(q, x);
-  }
-}
-
-void
-enqueue(struct queue *q, struct proc *p)
+// functions to ensure enqueue and dequeue locked without having access from other files
+static void
+enqueue_locked(struct queue *q, struct proc *p)
 {
   if (q->size == NPROC)
     return;
@@ -38,8 +29,8 @@ enqueue(struct queue *q, struct proc *p)
   q->size++;
 }
 
-struct proc*
-dequeue(struct queue *q)
+static struct proc*
+dequeue_locked(struct queue *q)
 {
   if (q->size == 0)
     return 0;
@@ -48,6 +39,56 @@ dequeue(struct queue *q)
   q->head = (q->head + 1) % NPROC;
   q->size--;
   return p;
+}
+
+void
+remove_from_queue(struct queue *q, struct proc *p)
+{
+  acquire(&mlfq_lock);
+  int n = q->size;
+  for(int i = 0; i < n; i++){
+    struct proc *x = dequeue_locked(q);
+    if(x && x != p)
+      enqueue_locked(q, x);
+  }
+  release(&mlfq_lock);
+}
+
+void
+enqueue(struct queue *q, struct proc *p)
+{
+  acquire(&mlfq_lock);
+  enqueue_locked(q, p);
+  release(&mlfq_lock);
+}
+
+struct proc*
+dequeue(struct queue *q)
+{
+  struct proc *p;
+
+  acquire(&mlfq_lock);
+  p = dequeue_locked(q);
+  release(&mlfq_lock);
+  return p;
+}
+
+
+int
+higher_prio_runnable(int prio)
+{
+  if(prio <= 0)
+    return 0;
+
+  acquire(&mlfq_lock);
+  for(int lvl = 0; lvl < prio; lvl++){
+    if(mlfq[lvl].size > 0){
+      release(&mlfq_lock);
+      return 1;
+    }
+  }
+  release(&mlfq_lock);
+  return 0;
 }
 
 
@@ -90,6 +131,7 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+  initlock(&mlfq_lock, "mlfq");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
@@ -495,12 +537,11 @@ scheduler(void)
 
     p = 0;
     
-    // select from the highest priority level the first available
+    // select from the highest priority level the first available process using round robin method
     for(int lvl = 0; lvl < 4; lvl++){
-      if(mlfq[lvl].size > 0){
-        p = dequeue(&mlfq[lvl]);
+      p = dequeue(&mlfq[lvl]);
+      if(p)
         break;
-      }
     }
 
     // sleep CPU not process found
